@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# tv-pirata -- Transmisión de escritorio
+#
+# © 2017 fauno <fauno@partidopirata.com.ar>
+#
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved.  This file is offered as-is,
+# without any warranty.
+# 
+# http://www.gnu.org/prep/maintain/html_node/License-Notices-for-Other-Files.html
+
+set -e
+set -E
+
+PROGRAM="$(basename -- "$0")"
+ICECAST_PORT=${ICECAST_PORT:-8000}
+ICECAST_SERVER=${ICECAST_SERVER:-partidopirata.com.ar}
+ICECAST_PASSWORD=${ICECAST_PASSWORD:-hackme}
+ICECAST_USER=${ICECAST_USER:-source}
+ICECAST_CHANNEL=${ICECAST_CHANNEL:-${PROGRAM}}
+VERBOSE=false
+
+# Obtiene la resolución actual
+function get_resolution() {
+  xrandr | grep '*' | tr -s ' ' | cut -d' ' -f2
+}
+
+function get_public_url() {
+  echo "https://${ICECAST_SERVER}/${ICECAST_CHANNEL}.webm"
+}
+
+function get_icecast_url() {
+  echo "icecast://${ICECAST_USER}:${ICECAST_PASSWORD}@${ICECAST_SERVER}:${ICECAST_PORT}/${ICECAST_CHANNEL}.webm"
+}
+
+function transmitir() {
+  local _resolution=$1 ; shift
+  ${VERBOSE} || local _quiet="-loglevel quiet"
+
+  ffmpeg -video_size ${_resolution} \
+          -framerate 25 \
+          ${_quiet} \
+          -f x11grab \
+          -i ${DISPLAY} \
+          -f alsa \
+          -i default \
+          -f webm \
+          -cluster_size_limit 2M \
+          -cluster_time_limit 5100 \
+          -content_type video/webm \
+          -c:a libvorbis \
+          -b:a 96K \
+          -c:v libvpx \
+          -b:v 1.5M \
+          -crf 30 \
+          -g 150 \
+          -deadline good \
+          -threads 4 \
+          -rw_timeout 10 \
+          $(get_icecast_url)
+}
+
+# Chequear que no estemos sourceando
+function is_main() {
+  test 'xtv-pirata' = "x${PROGRAM}"
+}
+
+function help() {
+  echo "${PROGRAM} -- Transmitir el escritorio"
+  echo
+  echo 'Uso:'
+  echo
+  echo "  [ICECAST_PASSWORD=${ICECAST_PASSWORD}] ./${PROGRAM} [-vh] [-s ${ICECAST_SERVER}] [-p ${ICECAST_PORT}] [-c ${ICECAST_CHANNEL}] [-u ${ICECAST_USER}]"
+  echo
+  echo "La contraseña siempre se pasa como variable de entorno."
+  echo
+  echo "Con 'q' terminás de transmitir"
+}
+
+function main() {
+  local _resolution=$(get_resolution)
+
+  while getopts hvu:c:s:p: option; do
+    case ${option} in
+      h) help ; exit ;;
+      v) VERBOSE=true ;;
+      u) ICECAST_USER="${OPTARG}" ;;
+      p) ICECAST_PORT="${OPTARG}" ;;
+      s) ICECAST_SERVER="${OPTARG}" ;;
+      c) ICECAST_CHANNEL="${OPTARG}" ;;
+    esac
+  done
+  shift $((${OPTIND} -1 ))
+
+  ${VERBOSE} && echo -n 'Tu transmisión saldrá por: '
+  get_public_url
+  transmitir ${_resolution}
+}
+
+# Ejecutar el programa si no estamos sourceando
+is_main && main $@
