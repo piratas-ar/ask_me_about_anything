@@ -99,7 +99,8 @@ function main() {
   ${VERBOSE} && echo -n 'Tu transmisión saldrá por: '
   get_public_url
 
-  while ! retransmitir ; do
+  while true ; do
+    retransmitir
     sleep 2
   done
 }
