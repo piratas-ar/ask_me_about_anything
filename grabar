@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# fallback -- recodifica el stream a otros formatos
+#
+# © 2017 fauno <fauno@partidopirata.com.ar>
+#
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved.  This file is offered as-is,
+# without any warranty.
+# 
+# http://www.gnu.org/prep/maintain/html_node/License-Notices-for-Other-Files.html
+
+set -e
+set -E
+
+PROGRAM="$(basename -- "$0")"
+ICECAST_PORT=${ICECAST_PORT:-8000}
+ICECAST_SERVER=${ICECAST_SERVER:-partidopirata.com.ar}
+ICECAST_PASSWORD=${ICECAST_PASSWORD:-hackme}
+ICECAST_USER=${ICECAST_USER:-source}
+ICECAST_CHANNEL=${ICECAST_CHANNEL:-${PROGRAM}}
+VERBOSE=false
+FORMAT=${FORMAT:-mp4}
+
+function get_original_stream() {
+  echo "${STREAM:-https://${ICECAST_SERVER}/${ICECAST_CHANNEL}.webm}"
+}
+
+function grabar() {
+  ${VERBOSE} || local _wquiet="-q"
+
+  get_original_stream | \
+  wget -i - ${_wquiet} -O "${ICECAST_CHANNEL}_$(date +%F_%X).webm"
+}
+
+# Chequear que no estemos sourceando
+function is_main() {
+  test 'xgrabar' = "x${PROGRAM}"
+}
+
+function help() {
+  echo "${PROGRAM} -- grabar"
+  echo
+  echo 'Uso:'
+  echo
+  echo "  ./${PROGRAM} [-vh] [-s ${ICECAST_SERVER}] [-p ${ICECAST_PORT}] [-c ${ICECAST_CHANNEL}]"
+}
+
+function main() {
+  while getopts hvu:c:s:p: option; do
+    case ${option} in
+      h) help ; exit ;;
+      v) VERBOSE=true ;;
+      u) ICECAST_USER="${OPTARG}" ;;
+      p) ICECAST_PORT="${OPTARG}" ;;
+      s) ICECAST_SERVER="${OPTARG}" ;;
+      c) ICECAST_CHANNEL="${OPTARG}" ;;
+    esac
+  done
+  shift $((${OPTIND} -1 ))
+
+  while true ; do
+    grabar
+  done
+}
+
+# Ejecutar el programa si no estamos sourceando
+is_main && main $@
