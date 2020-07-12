@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# jitsi-pirata -- Transmisión de Jitsi
+#
+# © 2020 barca infraestructura pirata
+#
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved.  This file is offered as-is,
+# without any warranty.
+# 
+# http://www.gnu.org/prep/maintain/html_node/License-Notices-for-Other-Files.html
+
+set -e
+set -E
+
+PROGRAM="$(basename -- "$0")"
+ICECAST_PORT=${ICECAST_PORT:-8000}
+ICECAST_SERVER=${ICECAST_SERVER:-transmisor.partidopirata.com.ar}
+ICECAST_PASSWORD=${ICECAST_PASSWORD:-hackme}
+ICECAST_USER=${ICECAST_USER:-source}
+ICECAST_CHANNEL=${ICECAST_CHANNEL:-${PROGRAM}}
+JITSI="${JITSI:-https://jitsi.partidopirata.com.ar/Transmision}"
+VERBOSE=false
+
+# Obtiene la resolución actual
+function get_resolution() {
+  xrandr | grep '*' | tr -s ' ' | cut -d' ' -f2
+}
+
+function get_public_url() {
+  echo "https://${ICECAST_SERVER}/${ICECAST_CHANNEL}.webm"
+}
+
+function get_icecast_url() {
+  echo "icecast://${ICECAST_USER}:${ICECAST_PASSWORD}@${ICECAST_SERVER}:${ICECAST_PORT}/${ICECAST_CHANNEL}.webm"
+}
+
+function jitsi() {
+  chromium --window-position=0,0 -window-size=640,480 -kiosk "${JITSI}" &
+}
+
+function transmitir() {
+  local _resolution=$1 ; shift
+  ${VERBOSE} || local _quiet="-loglevel quiet"
+
+  # g = framerate * segundos (5, 10)
+  # cluster size = más alto que el ancho de banda máximo (?)
+  # cluster time = segundos
+  ffmpeg -video_size 640x480 \
+         -framerate 25 \
+         ${_quiet} \
+         -f x11grab \
+         -i ${DISPLAY}+0,0 \
+         -f alsa \
+         -ac 2 -ar 44100 \
+         -i default \
+         -f webm \
+         -cluster_size_limit 2M \
+         -cluster_time_limit 5000 \
+         -content_type video/webm \
+         -c:a libvorbis \
+         -b:a 64K \
+         -c:v libvpx \
+         -b:v 400K \
+         -crf 30 \
+         -g 125 \
+         -deadline good \
+         -threads 4 \
+         $(get_icecast_url)
+}
+
+# Chequear que no estemos sourceando
+function is_main() {
+  test 'xjitsi-pirata' = "x${PROGRAM}"
+}
+
+function help() {
+  echo "${PROGRAM} -- Transmitir el escritorio"
+  echo
+  echo 'Uso:'
+  echo
+  echo "  [ICECAST_PASSWORD=${ICECAST_PASSWORD}] ./${PROGRAM} [-vh] [-s ${ICECAST_SERVER}] [-p ${ICECAST_PORT}] [-c ${ICECAST_CHANNEL}] [-u ${ICECAST_USER}] -j [${JITSI}]"
+  echo
+  echo "La contraseña siempre se pasa como variable de entorno."
+  echo
+  echo "Con 'q' terminás de transmitir"
+}
+
+function main() {
+  local _resolution=$(get_resolution)
+
+  while getopts hvu:c:s:p:j: option; do
+    case ${option} in
+      h) help ; exit ;;
+      v) VERBOSE=true ;;
+      u) ICECAST_USER="${OPTARG}" ;;
+      p) ICECAST_PORT="${OPTARG}" ;;
+      s) ICECAST_SERVER="${OPTARG}" ;;
+      c) ICECAST_CHANNEL="${OPTARG}" ;;
+      j) JITSI="${OPTARG}" ;;
+    esac
+  done
+  shift $((${OPTIND} -1 ))
+
+  ${VERBOSE} && echo -n 'Tu transmisión saldrá por: '
+  get_public_url
+  jitsi
+  transmitir ${_resolution}
+}
+
+# Ejecutar el programa si no estamos sourceando
+is_main && main $@
